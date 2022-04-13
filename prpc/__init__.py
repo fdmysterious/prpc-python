@@ -62,13 +62,16 @@ class PRPC_Frame:
             elif isinstance(a, bool):
                 return "yes" if a else "no"
             elif isinstance(a, str):
-                return f'"{a}"'
+                escaped = a.replace('"', '\\"')
+                return f'"{escaped}"'
             else:
                 raise RuntimeError(f"Uknown arg of type {type(a)}: {a}")
 
         id_str   = "*" if self.seq_id is None else str(self.seq_id)
-        args_str = " ".join(map(lambda x: proc_arg(x), self.args))
-        if args_str: args_str = " " + args_str # Prepend space if there are args
+        args_str = ""
+        if self.args is not None:
+            args_str = " " + " ".join(map(lambda x: proc_arg(x), self.args))
+
         return f"{id_str}:{self.identifier}{args_str}\n"
 
 

@@ -11,6 +11,15 @@ on parsimonious_.
 .. _PRPC: https://github.com/fdmysterious/PRPC
 .. _parsimonious: https://github.com/erikrose/parsimonious
 
+Using in your project
+=====================
+
+You can use pip to clone this repo:
+
+.. code:: bash
+
+   pip install git+https://github.com/fdmysterious/prpc-python
+
 Basic example
 =============
 

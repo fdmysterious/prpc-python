@@ -16,11 +16,15 @@ command_escaped= r'0:escaped "escaped \"quote\""' + "\n"
 if __name__ == "__main__":
     hello = prpc.parse(command_simple)
     print(hello)
-    #print(hello.encode())
+    print(repr(hello.encode()))
 
     args  = prpc.parse(command_args)
     print(args)
-    #print(args.encode())
+    print(repr(args.encode()))
 
     escaped = prpc.parse(command_escaped)
     print(escaped)
+    print(repr(escaped.encode()))
+
+    my_response = prpc.PRPC_Frame(seq_id=0, identifier="ok")
+    print(repr(my_response.encode()))

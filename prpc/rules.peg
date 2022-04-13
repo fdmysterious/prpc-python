@@ -1,0 +1,29 @@
+command    = id sep identifier args? wh? eol
+
+args       = arg arg*
+arg        = wh arg_value
+arg_value  = float / int / str / bool
+
+bool       = bool_true / bool_false
+
+bool_true  = "yes"
+bool_false = "no"
+
+dquote     = '"'
+esc_dquote = '\\"'
+
+int        = ~"[-]?[0-9]+"
+float      = ~"[-]?[0-9]+[.][0-9]+"
+
+str_char   = ~"[^\"]"
+str        = dquote (esc_dquote / str_char)* dquote
+
+id         = id_int / id_all
+id_int     = ~"[0-9]+"
+id_all     = "*"
+
+sep        = ":"
+
+eol        = ~"[\r\n]+"
+wh         = ~"[ \t]*"
+identifier = ~"[a-zA-Z0-9\-_\./]+"

@@ -11,21 +11,57 @@ import io
 import serial
 import threading
 import traceback
+import logging
 
 import prpc
 
 import queue
 import collections
 
+from typing import Callable
+
+
+# ┌────────────────────────────────────────┐
+# │ Errors                                 │
+# └────────────────────────────────────────┘
+
+class Request_Aborted(Exception):
+    def __init__(self):
+        super().__init__("Request aborted")
+
+
+# ┌────────────────────────────────────────┐
+# │ Request object                         │
+# └────────────────────────────────────────┘
+
 class PRPC_Request:
-    def __init__(self, handler: "PRPC_Handler"):
-        self.handler = handler
-        self.result  = queue.Queue(1) # Result value
+    def __init__(self, handler: "PRPC_Handler", abort_callback: Callable[["PRPC_Request"],None]):
+        self.handler        = handler
+        self.result         = queue.Queue(1) # Result value
+        
+        self.abort_callback = abort_callback
 
     def wait(self, timeout=None):
-        return self.result.get(timeout=timeout)
+        try:
+            result = self.result.get(timeout=timeout)
+            if result == None: raise Request_Aborted()
 
-    ## TODO abort? ##
+            return result
+
+        except queue.Empty:
+            self.abort_callback(self)
+            raise TimeoutError(f"Timeout waiting response for request")
+
+    def abort(self):
+        self.result.put_nowait(None) # Unlock any listening stuff
+        self.abort_callback()        # Clear request from handler
+
+    ## TODO abort ##
+
+
+# ┌────────────────────────────────────────┐
+# │ IOHandler                              │
+# └────────────────────────────────────────┘
 
 class PRPC_IOHandler:
     """
@@ -39,7 +75,10 @@ class PRPC_IOHandler:
     generate the best python-friendly code. Oopsie gloopsie!
     """
 
-    def __init__(self, io_: io.IOBase, max_reqs=1024):
+    def __init__(self, io_: io.IOBase, max_reqs=1024, encoding="utf-8", logname="PRPC_IOHandler"):
+        self.log            = logging.getLogger(logname)
+        self.encoding       = encoding
+
         self.io             = io_
         self.rx_worker      = threading.Thread(target=self._rx_worker, daemon=True)
         self.started        = threading.Event()
@@ -52,12 +91,25 @@ class PRPC_IOHandler:
     # ───────────── Start / Stop ───────────── #
 
     def start(self):
+        self.log.debug("Start RX worker")
         self.started.set()
         self.rx_worker.start()
 
+
     def stop(self):
+        self.log.debug("Stop RX worker")
         self.started.clear()
         self.rx_worker.join(timeout=10)
+
+
+    # ───────── Context manager stuff ──────── #
+    
+    def __enter__(self):
+        self.start()
+        return self
+
+    def __exit__(self, *exc):
+        self.stop()
 
 
     # ───────────── ID managment ───────────── #
@@ -85,14 +137,14 @@ class PRPC_IOHandler:
 
 
         # Build request object
-        rq = PRPC_Request(self)
+        rq = PRPC_Request(self, abort_callback=lambda rq: self._id_free())
         with self.req_lock:
             if self.reqs[frame.seq_id] is not None:
                 raise ValueError("Frame seq. id {frame.seq_id} is already waiting for a response")
 
             else:
                 # Send frame
-                self.io.write(frame.encode().encode("ascii"))
+                self.io.write(frame.encode().encode(self.encoding))
                 self.io.flush()
 
                 # Enqueue frame
@@ -106,9 +158,11 @@ class PRPC_IOHandler:
         # Frame is a response
         if frame.is_response():
             with self.req_lock:
-                if frame.seq_id >= len(self.reqs):
-                    pass
-                    # TODO ERROR seq id is above limit
+                if frame.seq_id is None:
+                    self.log.warning(f"Received notification with a response identifier: {frame}. These are invalid and ignored.")
+
+                elif frame.seq_id >= len(self.reqs):
+                    self.log.error(f"Received a response frame ({frame}) with a sequence ID above limit ({self.max_reqs}). It will be ignored." )
 
                 elif self.reqs[frame.seq_id] is not None:
                     req = self.reqs[frame.seq_id]
@@ -117,32 +171,33 @@ class PRPC_IOHandler:
                     self._id_free(frame.seq_id)
 
                 else:
-                    pass # TODO # Warning received for uknown request with ID ...
+                    self.log.warning(f"Received a response ({frame}) for an uknown sequence ID. It will be ignored.")
 
         # Frame is a request
         else:
+            self.log.warning("Requests are not handled for now.")
             pass # TODO # Handle requests
 
     def _process_line(self, line):
-        print("Received line: ", repr(line))
+        self.log.debug(f"Received line: {line!r}")
         try:
             frame = prpc.parse(line)
-            print(f"→ Received PRPC message: {frame.identifier}")
+            self.log.debug(f"Decoded PRPC Frame: {frame}")
             self._dispatch(frame)
 
         except prpc.ParseError as exc:
-            print("Failed to parse message", exc)
-            traceback.print_exc()
+            self.log.error(f"Failed to parse message: {exc}")
+            self.log.debug(traceback.format_exc())
     
     def _rx_worker(self):
         line_buffer = ""
 
-        print("Started RX worker")
+        self.log.debug("Started RX worker")
         while self.started.is_set():
             # Read a character and append it to input string buffer
             rbuf = self.io.read(1)
             try:
-                line_buffer += rbuf.decode("ascii")
+                line_buffer += rbuf.decode(self.encoding)
             except UnicodeDecodeError as e:
                 # todo debug message #
                 traceback.print_exc()
@@ -156,4 +211,4 @@ class PRPC_IOHandler:
                 line_buffer = line_buffer[nidx+1:]
                 nidx = line_buffer.find("\n")
 
-        print("Stopped RX worker")
+        self.log.debug("Stopped RX worker")

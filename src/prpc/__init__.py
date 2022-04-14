@@ -34,14 +34,19 @@
 import timeit
 import json
 
-from pathlib              import Path
-from functools            import reduce
+from pathlib                  import Path
+from functools                import reduce
+from dataclasses              import dataclass, field
+from typing                   import Tuple
 
-from parsimonious.grammar import Grammar
-from parsimonious.nodes   import NodeVisitor
+from parsimonious.grammar     import Grammar
+from parsimonious.nodes       import NodeVisitor
 
-from dataclasses          import dataclass, field
-from typing               import Tuple
+from parsimonious.exceptions  import (
+    ParseError,
+    VisitationError
+)
+
 
 # ┌────────────────────────────────────────┐
 # │ PRPC Frame dataclass                   │
@@ -53,6 +58,14 @@ class PRPC_Frame:
     identifier: str
     args: Tuple[any] = None
 
+    # ────────── Various predicates ────────── #
+    
+    def is_response(self):
+        return self.identifier in ("ok", "result", "error")
+
+
+    # ──────────────── Encode ──────────────── #
+    
     def encode(self):
         def proc_arg(a):
             if isinstance(a, int):

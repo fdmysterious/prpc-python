@@ -47,10 +47,6 @@ if __name__ == "__main__":
 
             time.sleep(1)
 
-            rq     = prpc_handler.req("pwm1/started/get")
-            result = rq.wait()
-            print("Result: ", result)
-
     finally:
         sdev.cancel_read()
         prpc_handler.stop()

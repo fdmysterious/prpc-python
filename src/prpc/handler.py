@@ -30,6 +30,11 @@ class Request_Aborted(Exception):
         super().__init__("Request aborted")
 
 
+class Request_Failed(Exception):
+    def __init__(self, msg):
+        super().__init__(f"Request failed: {msg}")
+
+
 # ┌────────────────────────────────────────┐
 # │ Request object                         │
 # └────────────────────────────────────────┘
@@ -44,9 +49,12 @@ class PRPC_Request:
     def wait(self, timeout=None):
         try:
             result = self.result.get(timeout=timeout)
-            if result == None: raise Request_Aborted()
-
-            return result
+            if   result            == None:    raise Request_Aborted()
+            elif result.identifier == "error": raise Request_Failed(result.args[0])
+            elif result.identifier == "result":
+                return tuple(result.args)
+            else:
+                return None # For OK results, return nothing. If an error has occured, an exception has been thrown.
 
         except queue.Empty:
             self.abort_callback(self)
@@ -143,8 +151,11 @@ class PRPC_IOHandler:
                 raise ValueError("Frame seq. id {frame.seq_id} is already waiting for a response")
 
             else:
+                frame_enc = frame.encode()
+                self.log.debug(f"Transmit frame: {frame_enc}")
+
                 # Send frame
-                self.io.write(frame.encode().encode(self.encoding))
+                self.io.write(frame_enc.encode(self.encoding))
                 self.io.flush()
 
                 # Enqueue frame

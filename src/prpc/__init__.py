@@ -68,12 +68,16 @@ class PRPC_Frame:
     
     def encode(self):
         def proc_arg(a):
-            if isinstance(a, int):
-                return str(a)
-            elif isinstance(a,float):
-                return str(a)
-            elif isinstance(a, bool):
+            # WARNING # isinstance(True|False, int) == True :'(
+            # So bool condition must be before int condition.
+
+            if isinstance(a, bool):
                 return "yes" if a else "no"
+            elif isinstance(a, float):
+                a_str = f"{a:f}"
+                return a_str
+            elif isinstance(a, int):
+                return str(a)
             elif isinstance(a, str):
                 escaped = a.replace('"', '\\"')
                 return f'"{escaped}"'

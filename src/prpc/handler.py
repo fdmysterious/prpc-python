@@ -20,6 +20,8 @@ import collections
 
 from typing import Callable
 
+from prpc import PRPC_Frame
+
 
 # ┌────────────────────────────────────────┐
 # │ Errors                                 │
@@ -84,21 +86,27 @@ class PRPC_IOHandler:
     """
 
     def __init__(self, io_: io.IOBase, max_reqs=1024, encoding="utf-8", logname="PRPC_IOHandler"):
-        self.log            = logging.getLogger(logname)
-        self.encoding       = encoding
+        self.log                 = logging.getLogger(logname)
+        self.encoding            = encoding
 
-        self.io             = io_
-        self.rx_worker      = threading.Thread(target=self._rx_worker, daemon=True)
-        self.started        = threading.Event()
+        self.io                  = io_
+        self.started             = threading.Event()
 
-        self.req_lock       = threading.RLock()
-        self.reqs           = [None]*max_reqs
-        self.available_ids  = collections.deque(range(max_reqs))
+        self.rx_worker           = None # Thread object is created in start() method
+        self.req_lock            = threading.RLock()
+        self.reqs                = [None]*max_reqs
+        self.available_ids       = collections.deque(range(max_reqs))
+
+        # Callback to handle generic notifications
+        self.handle_notification = lambda frame: None
 
 
     # ───────────── Start / Stop ───────────── #
 
     def start(self):
+        # Object is created here, to allow further restarting.
+        self.rx_worker      = threading.Thread(target=self._rx_worker, daemon=True)
+
         self.log.debug("Start RX worker")
         self.started.set()
         self.rx_worker.start()
@@ -184,9 +192,15 @@ class PRPC_IOHandler:
                 else:
                     self.log.warning(f"Received a response ({frame}) for an uknown sequence ID. It will be ignored.")
 
+        # Frame is a notification
+        elif frame.is_notification():
+            self.handle_notification(frame)
+
+
         # Frame is a request
         else:
             self.log.warning("Requests are not handled for now.")
+            self.log.warning(f"Frame: {frame}")
             pass # TODO # Handle requests
 
     def _process_line(self, line):

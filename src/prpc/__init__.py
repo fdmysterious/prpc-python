@@ -63,6 +63,10 @@ class PRPC_Frame:
     def is_response(self):
         return self.identifier in ("ok", "result", "error")
 
+    
+    def is_notification(self):
+        return self.seq_id is None
+
 
     # ──────────────── Encode ──────────────── #
     
